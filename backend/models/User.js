@@ -113,7 +113,11 @@ class User {
     static async findByEmail(email) {
         try {
             const sql = 'SELECT * FROM users WHERE email = ?';
-            return await queryOne(sql, [email]);
+            const dbUser = await queryOne(sql, [email]);
+            if (dbUser) {
+                return dbUser;
+            }
+            return memFindByEmail(email) || null;
         } catch (error) {
             return memFindByEmail(email) || null;
         }
@@ -125,9 +129,14 @@ class User {
     static async findById(id) {
         try {
             const sql = 'SELECT id, nom, email, role FROM users WHERE id = ?';
-            return await queryOne(sql, [id]);
+            const dbUser = await queryOne(sql, [id]);
+            if (dbUser) {
+                return dbUser;
+            }
+            const memUser = memUsers.get(Number(id));
+            return memUser ? { id: memUser.id, nom: memUser.nom, email: memUser.email, role: memUser.role } : null;
         } catch (error) {
-            const u = memUsers.get(id);
+            const u = memUsers.get(Number(id));
             return u ? { id: u.id, nom: u.nom, email: u.email, role: u.role } : null;
         }
     }
