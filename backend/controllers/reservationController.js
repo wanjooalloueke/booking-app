@@ -7,6 +7,9 @@ import Reservation from '../models/Reservation.js';
 import Hotel from '../models/Hotel.js';
 import Restaurant from '../models/Restaurant.js';
 
+const FALLBACK_HOTEL_IDS = new Set([1, 2, 3, 4, 5, 6, 7, 8]);
+const FALLBACK_RESTAURANT_IDS = new Set([1, 2, 3, 4, 5, 6, 7, 8]);
+
 // Fallback en mémoire si la DB des réservations est indisponible.
 const memoryReservations = [];
 let memoryReservationId = 100000;
@@ -25,9 +28,10 @@ export const createReservation = async (req, res) => {
     try {
         const { type, item_id, date_debut, date_fin, nombre_personnes, statut } = req.body;
         const user_id = req.user.id;
+        const numericItemId = Number(item_id);
 
         // Validation
-        if (!type || !item_id || !date_debut || !date_fin) {
+        if (!type || !numericItemId || !date_debut || !date_fin) {
             return res.status(400).json({
                 success: false,
                 message: 'Type, item_id, date_debut et date_fin sont requis'
@@ -41,12 +45,18 @@ export const createReservation = async (req, res) => {
             });
         }
 
-        // Vérifier que l'hôtel ou restaurant existe
+        // Vérifier que l'hôtel ou restaurant existe (DB ou fallback visuel)
         let item;
         if (type === 'hotel') {
-            item = await Hotel.findById(item_id);
+            item = await Hotel.findById(numericItemId);
+            if (!item && FALLBACK_HOTEL_IDS.has(numericItemId)) {
+                item = { id: numericItemId, source: 'fallback' };
+            }
         } else {
-            item = await Restaurant.findById(item_id);
+            item = await Restaurant.findById(numericItemId);
+            if (!item && FALLBACK_RESTAURANT_IDS.has(numericItemId)) {
+                item = { id: numericItemId, source: 'fallback' };
+            }
         }
 
         if (!item) {
@@ -69,7 +79,7 @@ export const createReservation = async (req, res) => {
         const reservation = await Reservation.create(
             user_id,
             type,
-            item_id,
+            numericItemId,
             date_debut,
             date_fin,
             nombre_personnes || 1,
