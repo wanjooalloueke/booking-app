@@ -1759,34 +1759,30 @@ function generateReviews(totalReviews, isHotel) {
  */
 async function showDetails(itemId, type) {
     try {
-        // Ouvrir la modal IMMÉDIATEMENT pour que l'utilisateur voie une réaction
-        const detailsContent = document.getElementById('detailsContent');
-        detailsContent.innerHTML = '<div style="text-align:center;padding:60px 20px;font-size:1.1rem;color:#555">⏳ Chargement...</div>';
-        document.getElementById('detailsModal').classList.add('active');
+        let item;
 
-        // Chercher d'abord dans les données locales (instantané)
-        const sampleData = type === 'hotel' ? sampleHotels : sampleRestaurants;
-        let item = sampleData.find(i => i.id === parseInt(itemId));
-
-        // Essayer l'API pour des données à jour
+        // Essayer de récupérer depuis l'API, sinon utiliser les données d'exemple
         try {
             const endpoint = type === 'hotel' ? `/hotels/${itemId}` : `/restaurants/${itemId}`;
             const response = await apiRequest(endpoint);
-            if (response.data) item = response.data;
+            item = response.data;
         } catch (apiError) {
-            // On garde les données locales déjà trouvées
+            console.warn('API non disponible, utilisation des données d\'exemple');
+            // Chercher dans les données d'exemple
+            const sampleData = type === 'hotel' ? sampleHotels : sampleRestaurants;
+            item = sampleData.find(i => i.id === parseInt(itemId));
         }
 
         if (!item) {
-            detailsContent.innerHTML = '<div style="text-align:center;padding:60px;color:#e53e3e">Établissement non trouvé.</div>';
+            showNotification('Élément non trouvé', 'error');
             return;
         }
 
-        const isHotel = type === 'hotel';
         // Créer le contenu détaillé
-        const _detailsContent = detailsContent;
+        const detailsContent = document.getElementById('detailsContent');
+        const isHotel = type === 'hotel';
 
-        _detailsContent.innerHTML = `
+        detailsContent.innerHTML = `
         <div class="details-header">
             <div class="details-image">
                 <img src="${item.image}" alt="${item.nom}" onerror="this.src='https://via.placeholder.com/600x400?text=Image+indisponible'" />
@@ -1892,6 +1888,9 @@ async function showDetails(itemId, type) {
             </button>
         </div>
     `;
+
+        // Afficher la modal
+        document.getElementById('detailsModal').classList.add('active');
 
     } catch (error) {
         console.error('Erreur lors du chargement des détails:', error);
