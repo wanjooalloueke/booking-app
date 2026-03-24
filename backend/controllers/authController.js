@@ -81,9 +81,14 @@ export const register = async (req, res) => {
             });
         }
 
+        const dbUnavailable = /connect|ECONN|SQL|Unknown column|ER_/.test(String(error.message || ''));
+        const isProd = process.env.NODE_ENV === 'production';
+
         res.status(500).json({
             success: false,
-            message: 'Erreur lors de l\'inscription'
+            message: isProd && dbUnavailable
+                ? 'Base de données indisponible. Veuillez vérifier la configuration MySQL du serveur.'
+                : 'Erreur lors de l\'inscription'
         });
     }
 };
@@ -139,9 +144,14 @@ export const login = async (req, res) => {
 
     } catch (error) {
         console.error('Erreur de connexion:', error);
+        const dbUnavailable = /connect|ECONN|SQL|Unknown column|ER_/.test(String(error.message || ''));
+        const isProd = process.env.NODE_ENV === 'production';
+
         res.status(500).json({
             success: false,
-            message: 'Erreur lors de la connexion'
+            message: isProd && dbUnavailable
+                ? 'Base de données indisponible. Veuillez vérifier la configuration MySQL du serveur.'
+                : 'Erreur lors de la connexion'
         });
     }
 };

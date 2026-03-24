@@ -11,6 +11,7 @@ import { query, queryOne, execute } from '../config/database.js';
 const memUsers = new Map(); // id -> userObject
 let memIdCounter = 1000;
 let userColumnsCache = null;
+const allowMemoryFallback = process.env.ALLOW_MEMORY_FALLBACK === 'true' || process.env.NODE_ENV !== 'production';
 
 function memFindByEmail(email) {
     for (const u of memUsers.values()) {
@@ -102,6 +103,9 @@ class User {
             };
         } catch (error) {
             if (error.message === 'Cet email est déjà utilisé') throw error;
+            if (!allowMemoryFallback) {
+                throw error;
+            }
             // Fallback en mémoire
             console.warn('[Fallback] DB indisponible pour User.create, stockage en mémoire');
             if (memFindByEmail(email)) throw new Error('Cet email est déjà utilisé');
@@ -143,6 +147,9 @@ class User {
             const result = await execute(sql, [nom, prenom, email, provider, String(providerId), 'client']);
             return { id: result.insertId, nom, prenom, email, role: 'client' };
         } catch (error) {
+            if (!allowMemoryFallback) {
+                throw error;
+            }
             console.warn('[Fallback] DB indisponible pour OAuth, stockage en mémoire');
             let user = memFindByOAuth(provider, providerId);
             if (user) return { id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role };
@@ -183,8 +190,11 @@ class User {
             if (dbUser) {
                 return dbUser;
             }
-            return memFindByEmail(email) || null;
+            return allowMemoryFallback ? (memFindByEmail(email) || null) : null;
         } catch (error) {
+            if (!allowMemoryFallback) {
+                throw error;
+            }
             return memFindByEmail(email) || null;
         }
     }
@@ -209,9 +219,15 @@ class User {
             if (dbUser) {
                 return dbUser;
             }
+            if (!allowMemoryFallback) {
+                return null;
+            }
             const memUser = memUsers.get(Number(id));
             return memUser ? { id: memUser.id, nom: memUser.nom, email: memUser.email, role: memUser.role } : null;
         } catch (error) {
+            if (!allowMemoryFallback) {
+                throw error;
+            }
             const u = memUsers.get(Number(id));
             return u ? { id: u.id, nom: u.nom, email: u.email, role: u.role } : null;
         }
