@@ -11,6 +11,13 @@ import Restaurant from '../models/Restaurant.js';
 const memoryReservations = [];
 let memoryReservationId = 100000;
 
+const getMemoryReservationsByUser = (userId) => {
+    const numericUserId = Number(userId);
+    return memoryReservations
+        .filter((reservation) => Number(reservation.user_id) === numericUserId)
+        .sort((a, b) => new Date(b.date_debut) - new Date(a.date_debut));
+};
+
 /**
  * Créer une nouvelle réservation
  */
@@ -118,18 +125,23 @@ export const getUserReservations = async (req, res) => {
         }
 
         const reservations = await Reservation.findByUserId(userId);
+        const fallbackReservations = getMemoryReservationsByUser(userId);
+        const merged = [...fallbackReservations, ...reservations];
 
         res.json({
             success: true,
-            data: reservations,
-            count: reservations.length
+            data: merged,
+            count: merged.length
         });
 
     } catch (error) {
         console.error('Erreur:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erreur lors de la récupération des réservations'
+        const fallbackReservations = getMemoryReservationsByUser(req.params.userId);
+        res.json({
+            success: true,
+            data: fallbackReservations,
+            count: fallbackReservations.length,
+            fallback: true
         });
     }
 };
@@ -140,7 +152,11 @@ export const getUserReservations = async (req, res) => {
 export const getReservationById = async (req, res) => {
     try {
         const { id } = req.params;
-        const reservation = await Reservation.findById(id);
+        let reservation = await Reservation.findById(id);
+
+        if (!reservation) {
+            reservation = memoryReservations.find((item) => Number(item.id) === Number(id));
+        }
 
         if (!reservation) {
             return res.status(404).json({
@@ -164,9 +180,25 @@ export const getReservationById = async (req, res) => {
 
     } catch (error) {
         console.error('Erreur:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erreur lors de la récupération de la réservation'
+        const fallbackReservation = memoryReservations.find((item) => Number(item.id) === Number(req.params.id));
+        if (!fallbackReservation) {
+            return res.status(404).json({
+                success: false,
+                message: 'Réservation non trouvée'
+            });
+        }
+
+        if (req.user.id !== fallbackReservation.user_id && req.user.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Accès refusé'
+            });
+        }
+
+        return res.json({
+            success: true,
+            data: fallbackReservation,
+            fallback: true
         });
     }
 };
@@ -256,7 +288,11 @@ export const cancelReservation = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const reservation = await Reservation.findById(id);
+        let reservation = await Reservation.findById(id);
+
+        if (!reservation) {
+            reservation = memoryReservations.find((item) => Number(item.id) === Number(id));
+        }
 
         if (!reservation) {
             return res.status(404).json({
@@ -273,7 +309,18 @@ export const cancelReservation = async (req, res) => {
             });
         }
 
-        const success = await Reservation.cancel(id);
+        let success = await Reservation.cancel(id);
+
+        if (!success) {
+            const index = memoryReservations.findIndex((item) => Number(item.id) === Number(id));
+            if (index !== -1) {
+                memoryReservations[index] = {
+                    ...memoryReservations[index],
+                    statut: 'annulée'
+                };
+                success = true;
+            }
+        }
 
         if (!success) {
             return res.status(400).json({
@@ -289,6 +336,27 @@ export const cancelReservation = async (req, res) => {
 
     } catch (error) {
         console.error('Erreur:', error);
+        const index = memoryReservations.findIndex((item) => Number(item.id) === Number(req.params.id));
+        if (index !== -1) {
+            if (req.user.id !== memoryReservations[index].user_id && req.user.role !== 'admin') {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Accès refusé'
+                });
+            }
+
+            memoryReservations[index] = {
+                ...memoryReservations[index],
+                statut: 'annulée'
+            };
+
+            return res.json({
+                success: true,
+                message: 'Réservation annulée avec succès',
+                fallback: true
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: 'Erreur lors de l\'annulation'
