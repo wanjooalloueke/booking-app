@@ -1584,17 +1584,25 @@ async function handleReservation(itemId, type) {
         openAuthModal();
         return;
     }
-    
-    const checkIn = document.getElementById('checkIn').value;
-    const checkOut = document.getElementById('checkOut').value;
-    const guests = document.getElementById('guests').value;
-    
-    if (!checkIn || !checkOut) {
-        showNotification('Veuillez sélectionner les dates', 'warning');
-        return;
+
+    // Récupérer les dates du formulaire de recherche si déjà remplies (optionnel)
+    const checkInEl = document.getElementById('checkIn');
+    const checkOutEl = document.getElementById('checkOut');
+    const guestsEl = document.getElementById('guests');
+    const checkIn = checkInEl ? checkInEl.value : '';
+    const checkOut = checkOutEl ? checkOutEl.value : '';
+    const guests = guestsEl ? guestsEl.value : '1';
+
+    // Chercher d'abord dans les données locales, puis dans les données API
+    let item = getItemFromSources(itemId, type);
+    if (!item) {
+        // Fallback : chercher dans toutes les données disponibles
+        try {
+            const endpoint = type === 'hotel' ? `/hotels/${itemId}` : `/restaurants/${itemId}`;
+            const resp = await apiRequest(endpoint);
+            item = resp.data;
+        } catch (_) { /* ignoré */ }
     }
-    
-    const item = getItemFromSources(itemId, type);
     if (!item) {
         showNotification('Établissement introuvable pour cette réservation.', 'error');
         return;
@@ -1751,30 +1759,34 @@ function generateReviews(totalReviews, isHotel) {
  */
 async function showDetails(itemId, type) {
     try {
-        let item;
+        // Ouvrir la modal IMMÉDIATEMENT pour que l'utilisateur voie une réaction
+        const detailsContent = document.getElementById('detailsContent');
+        detailsContent.innerHTML = '<div style="text-align:center;padding:60px 20px;font-size:1.1rem;color:#555">⏳ Chargement...</div>';
+        document.getElementById('detailsModal').classList.add('active');
 
-        // Essayer de récupérer depuis l'API, sinon utiliser les données d'exemple
+        // Chercher d'abord dans les données locales (instantané)
+        const sampleData = type === 'hotel' ? sampleHotels : sampleRestaurants;
+        let item = sampleData.find(i => i.id === parseInt(itemId));
+
+        // Essayer l'API pour des données à jour
         try {
             const endpoint = type === 'hotel' ? `/hotels/${itemId}` : `/restaurants/${itemId}`;
             const response = await apiRequest(endpoint);
-            item = response.data;
+            if (response.data) item = response.data;
         } catch (apiError) {
-            console.warn('API non disponible, utilisation des données d\'exemple');
-            // Chercher dans les données d'exemple
-            const sampleData = type === 'hotel' ? sampleHotels : sampleRestaurants;
-            item = sampleData.find(i => i.id === parseInt(itemId));
+            // On garde les données locales déjà trouvées
         }
 
         if (!item) {
-            showNotification('Élément non trouvé', 'error');
+            detailsContent.innerHTML = '<div style="text-align:center;padding:60px;color:#e53e3e">Établissement non trouvé.</div>';
             return;
         }
 
-        // Créer le contenu détaillé
-        const detailsContent = document.getElementById('detailsContent');
         const isHotel = type === 'hotel';
+        // Créer le contenu détaillé
+        const _detailsContent = detailsContent;
 
-        detailsContent.innerHTML = `
+        _detailsContent.innerHTML = `
         <div class="details-header">
             <div class="details-image">
                 <img src="${item.image}" alt="${item.nom}" onerror="this.src='https://via.placeholder.com/600x400?text=Image+indisponible'" />
@@ -1880,9 +1892,6 @@ async function showDetails(itemId, type) {
             </button>
         </div>
     `;
-
-        // Afficher la modal
-        document.getElementById('detailsModal').classList.add('active');
 
     } catch (error) {
         console.error('Erreur lors du chargement des détails:', error);
