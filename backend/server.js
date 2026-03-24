@@ -30,6 +30,9 @@ const FRONTEND_DIR = path.join(__dirname, '../frontend');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Render/Reverse proxy: nécessaire pour détecter correctement https
+app.set('trust proxy', 1);
+
 // ===================================
 // MIDDLEWARE
 // ===================================
@@ -100,17 +103,26 @@ app.use('/api/auth', authRoutes);
 // ROUTES OAUTH (Google, Facebook, Apple)
 // ===================================
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5507';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+const getRequestOrigin = (req) => `${req.protocol}://${req.get('host')}`;
+
+const getFrontendUrl = (req) => {
+    const configuredFrontend = (process.env.FRONTEND_URL || '').trim();
+    return configuredFrontend || getRequestOrigin(req);
+};
+
+const getBackendUrl = (req) => getRequestOrigin(req);
 
 // --- GOOGLE OAUTH ---
 app.get('/api/auth/google', (req, res) => {
+    const frontendUrl = getFrontendUrl(req);
+    const backendUrl = getBackendUrl(req);
+
     if (!process.env.GOOGLE_CLIENT_ID) {
-        return res.redirect(`${FRONTEND_URL}/?oauth_error=Google+non+config%C3%A9`);
+        return res.redirect(`${frontendUrl}/?oauth_error=Google+non+config%C3%A9`);
     }
     const params = new URLSearchParams({
         client_id: process.env.GOOGLE_CLIENT_ID,
-        redirect_uri: `${BACKEND_URL}/api/auth/google/callback`,
+        redirect_uri: `${backendUrl}/api/auth/google/callback`,
         response_type: 'code',
         scope: 'openid email profile',
         access_type: 'offline',
@@ -121,6 +133,8 @@ app.get('/api/auth/google', (req, res) => {
 
 app.get('/api/auth/google/callback', async (req, res) => {
     try {
+        const frontendUrl = getFrontendUrl(req);
+        const backendUrl = getBackendUrl(req);
         const { code } = req.query;
         if (!code) throw new Error('Code manquant');
 
@@ -132,7 +146,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
                 code,
                 client_id: process.env.GOOGLE_CLIENT_ID,
                 client_secret: process.env.GOOGLE_CLIENT_SECRET,
-                redirect_uri: `${BACKEND_URL}/api/auth/google/callback`,
+                redirect_uri: `${backendUrl}/api/auth/google/callback`,
                 grant_type: 'authorization_code'
             })
         });
@@ -157,21 +171,25 @@ app.get('/api/auth/google/callback', async (req, res) => {
         res.cookie('token', token, { httpOnly: true, sameSite: 'lax', maxAge: expireHours * 3600000 });
 
         const userEncoded = encodeURIComponent(JSON.stringify({ id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role }));
-        res.redirect(`${FRONTEND_URL}/?oauth_token=${token}&oauth_user=${userEncoded}`);
+        res.redirect(`${frontendUrl}/?oauth_token=${token}&oauth_user=${userEncoded}`);
     } catch (err) {
         console.error('Google OAuth error:', err);
-        res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(err.message)}`);
+        const frontendUrl = getFrontendUrl(req);
+        res.redirect(`${frontendUrl}/?oauth_error=${encodeURIComponent(err.message)}`);
     }
 });
 
 // --- FACEBOOK OAUTH ---
 app.get('/api/auth/facebook', (req, res) => {
+    const frontendUrl = getFrontendUrl(req);
+    const backendUrl = getBackendUrl(req);
+
     if (!process.env.FACEBOOK_APP_ID) {
-        return res.redirect(`${FRONTEND_URL}/?oauth_error=Facebook+non+config%C3%A9`);
+        return res.redirect(`${frontendUrl}/?oauth_error=Facebook+non+config%C3%A9`);
     }
     const params = new URLSearchParams({
         client_id: process.env.FACEBOOK_APP_ID,
-        redirect_uri: `${BACKEND_URL}/api/auth/facebook/callback`,
+        redirect_uri: `${backendUrl}/api/auth/facebook/callback`,
         scope: 'email,public_profile',
         response_type: 'code'
     });
@@ -180,6 +198,8 @@ app.get('/api/auth/facebook', (req, res) => {
 
 app.get('/api/auth/facebook/callback', async (req, res) => {
     try {
+        const frontendUrl = getFrontendUrl(req);
+        const backendUrl = getBackendUrl(req);
         const { code } = req.query;
         if (!code) throw new Error('Code manquant');
 
@@ -187,7 +207,7 @@ app.get('/api/auth/facebook/callback', async (req, res) => {
         const tokenRes = await fetch(`https://graph.facebook.com/v19.0/oauth/access_token?${new URLSearchParams({
             client_id: process.env.FACEBOOK_APP_ID,
             client_secret: process.env.FACEBOOK_APP_SECRET,
-            redirect_uri: `${BACKEND_URL}/api/auth/facebook/callback`,
+            redirect_uri: `${backendUrl}/api/auth/facebook/callback`,
             code
         })}`);
         const tokenData = await tokenRes.json();
@@ -208,21 +228,25 @@ app.get('/api/auth/facebook/callback', async (req, res) => {
         res.cookie('token', token, { httpOnly: true, sameSite: 'lax', maxAge: expireHours * 3600000 });
 
         const userEncoded = encodeURIComponent(JSON.stringify({ id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role }));
-        res.redirect(`${FRONTEND_URL}/?oauth_token=${token}&oauth_user=${userEncoded}`);
+        res.redirect(`${frontendUrl}/?oauth_token=${token}&oauth_user=${userEncoded}`);
     } catch (err) {
         console.error('Facebook OAuth error:', err);
-        res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(err.message)}`);
+        const frontendUrl = getFrontendUrl(req);
+        res.redirect(`${frontendUrl}/?oauth_error=${encodeURIComponent(err.message)}`);
     }
 });
 
 // --- APPLE SIGN IN ---
 app.get('/api/auth/apple', (req, res) => {
+    const frontendUrl = getFrontendUrl(req);
+    const backendUrl = getBackendUrl(req);
+
     if (!process.env.APPLE_CLIENT_ID || !process.env.APPLE_TEAM_ID || !process.env.APPLE_KEY_ID) {
-        return res.redirect(`${FRONTEND_URL}/?oauth_error=Apple+Sign+In+non+configur%C3%A9`);
+        return res.redirect(`${frontendUrl}/?oauth_error=Apple+Sign+In+non+configur%C3%A9`);
     }
     const params = new URLSearchParams({
         client_id: process.env.APPLE_CLIENT_ID,
-        redirect_uri: `${BACKEND_URL}/api/auth/apple/callback`,
+        redirect_uri: `${backendUrl}/api/auth/apple/callback`,
         response_type: 'code id_token',
         scope: 'name email',
         response_mode: 'form_post'
@@ -232,6 +256,7 @@ app.get('/api/auth/apple', (req, res) => {
 
 app.post('/api/auth/apple/callback', async (req, res) => {
     try {
+        const frontendUrl = getFrontendUrl(req);
         const { code, id_token, user: appleUser } = req.body;
         if (!id_token) throw new Error('Token Apple manquant');
 
@@ -261,10 +286,11 @@ app.post('/api/auth/apple/callback', async (req, res) => {
         res.cookie('token', token, { httpOnly: true, sameSite: 'lax', maxAge: expireHours * 3600000 });
 
         const userEncoded = encodeURIComponent(JSON.stringify({ id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role }));
-        res.redirect(`${FRONTEND_URL}/?oauth_token=${token}&oauth_user=${userEncoded}`);
+        res.redirect(`${frontendUrl}/?oauth_token=${token}&oauth_user=${userEncoded}`);
     } catch (err) {
         console.error('Apple OAuth error:', err);
-        res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(err.message)}`);
+        const frontendUrl = getFrontendUrl(req);
+        res.redirect(`${frontendUrl}/?oauth_error=${encodeURIComponent(err.message)}`);
     }
 });
 

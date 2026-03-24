@@ -8,16 +8,26 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const dbHost = process.env.DB_HOST || process.env.MYSQLHOST || 'localhost';
+const dbUser = process.env.DB_USER || process.env.MYSQLUSER || 'root';
+const dbPassword = process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || '';
+const dbName = process.env.DB_NAME || process.env.MYSQLDATABASE || 'booking_app';
+const dbPort = Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306);
+
+const sslEnabled = ['1', 'true', 'yes'].includes((process.env.DB_SSL || process.env.MYSQL_SSL || '').toLowerCase());
+
 // Pool de connexions pour de meilleures performances
 const pool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'booking_app',
-    port: process.env.DB_PORT || 3306,
+    host: dbHost,
+    user: dbUser,
+    password: dbPassword,
+    database: dbName,
+    port: dbPort,
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    connectTimeout: 10000,
+    ...(sslEnabled ? { ssl: { rejectUnauthorized: false } } : {})
 });
 
 /**
