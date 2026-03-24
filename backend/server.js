@@ -19,7 +19,7 @@ import restaurantRoutes from './routes/restaurantRoutes.js';
 import reservationRoutes from './routes/reservationRoutes.js';
 import { requirePageAuth, generateToken } from './middleware/auth.js';
 import User from './models/User.js';
-import { testConnection } from './config/database.js';
+import { testConnection, ensureCoreTables } from './config/database.js';
 
 // Charger les variables d'environnement
 dotenv.config();
@@ -377,6 +377,7 @@ app.listen(PORT, async () => {
     console.log(`🗄️ DB cible -> host: ${dbHostPreview} | port: ${dbPortPreview} | db: ${dbNamePreview} | user: ${dbUserPreview}`);
 
     await testConnection();
+    await ensureCoreTables();
 });
 
 export default app;
