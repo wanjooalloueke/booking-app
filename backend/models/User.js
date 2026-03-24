@@ -1,38 +1,67 @@
 /**
  * Model Utilisateur
  * Gestion des utilisateurs et authentification
+ * Fallback en mémoire si MySQL indisponible (données perdues au redémarrage)
  */
 
 import bcrypt from 'bcryptjs';
 import { query, queryOne, execute } from '../config/database.js';
+
+// Store en mémoire (fallback sans DB)
+const memUsers = new Map(); // id -> userObject
+let memIdCounter = 1000;
+
+function memFindByEmail(email) {
+    for (const u of memUsers.values()) {
+        if (u.email && u.email.toLowerCase() === email.toLowerCase()) return u;
+    }
+    return null;
+}
+
+function memFindByOAuth(provider, providerId) {
+    for (const u of memUsers.values()) {
+        if (u.provider === provider && u.provider_id === String(providerId)) return u;
+    }
+    return null;
+}
 
 class User {
     /**
      * Créer un nouvel utilisateur (inscription classique)
      */
     static async create(nom, prenom, email, password, telephone = null) {
-        // Vérifier si l'email existe déjà
-        const existingUser = await this.findByEmail(email);
-        if (existingUser) {
-            throw new Error('Cet email est déjà utilisé');
+        try {
+            const existingUser = await this.findByEmail(email);
+            if (existingUser) {
+                throw new Error('Cet email est déjà utilisé');
+            }
+
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(password, salt);
+
+            const sql = 'INSERT INTO users (nom, prenom, email, mot_de_passe, telephone, provider, role) VALUES (?, ?, ?, ?, ?, ?, ?)';
+            const result = await execute(sql, [nom, prenom || null, email, hashedPassword, telephone || null, 'local', 'client']);
+
+            return {
+                id: result.insertId,
+                nom,
+                prenom: prenom || null,
+                email,
+                telephone: telephone || null,
+                role: 'client'
+            };
+        } catch (error) {
+            if (error.message === 'Cet email est déjà utilisé') throw error;
+            // Fallback en mémoire
+            console.warn('[Fallback] DB indisponible pour User.create, stockage en mémoire');
+            if (memFindByEmail(email)) throw new Error('Cet email est déjà utilisé');
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(password, salt);
+            const id = ++memIdCounter;
+            const user = { id, nom, prenom: prenom || null, email, mot_de_passe: hashedPassword, telephone: telephone || null, provider: 'local', role: 'client' };
+            memUsers.set(id, user);
+            return { id, nom, prenom: prenom || null, email, telephone: telephone || null, role: 'client' };
         }
-
-        // Hasher le mot de passe avec bcrypt
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        // Insérer l'utilisateur
-        const sql = 'INSERT INTO users (nom, prenom, email, mot_de_passe, telephone, provider, role) VALUES (?, ?, ?, ?, ?, ?, ?)';
-        const result = await execute(sql, [nom, prenom || null, email, hashedPassword, telephone || null, 'local', 'client']);
-
-        return {
-            id: result.insertId,
-            nom,
-            prenom: prenom || null,
-            email,
-            telephone: telephone || null,
-            role: 'client'
-        };
     }
 
     /**
@@ -45,54 +74,62 @@ class User {
         const prenom = nameParts[0] || '';
         const nom = nameParts.slice(1).join(' ') || prenom;
 
-        // Chercher par provider_id
-        let user = await queryOne(
-            'SELECT id, nom, prenom, email, role FROM users WHERE provider = ? AND provider_id = ?',
-            [provider, String(providerId)]
-        );
+        try {
+            let user = await queryOne(
+                'SELECT id, nom, prenom, email, role FROM users WHERE provider = ? AND provider_id = ?',
+                [provider, String(providerId)]
+            );
+            if (user) return user;
 
-        if (user) return user;
-
-        // Chercher par email si différent
-        if (email) {
-            user = await queryOne('SELECT id, nom, prenom, email, role FROM users WHERE email = ?', [email]);
-            if (user) {
-                // Lier le compte OAuth au compte existant
-                await execute(
-                    'UPDATE users SET provider = ?, provider_id = ? WHERE id = ?',
-                    [provider, String(providerId), user.id]
-                );
-                return user;
+            if (email) {
+                user = await queryOne('SELECT id, nom, prenom, email, role FROM users WHERE email = ?', [email]);
+                if (user) {
+                    await execute('UPDATE users SET provider = ?, provider_id = ? WHERE id = ?', [provider, String(providerId), user.id]);
+                    return user;
+                }
             }
+
+            const sql = 'INSERT INTO users (nom, prenom, email, mot_de_passe, provider, provider_id, role) VALUES (?, ?, ?, NULL, ?, ?, ?)';
+            const result = await execute(sql, [nom, prenom, email, provider, String(providerId), 'client']);
+            return { id: result.insertId, nom, prenom, email, role: 'client' };
+        } catch (error) {
+            console.warn('[Fallback] DB indisponible pour OAuth, stockage en mémoire');
+            let user = memFindByOAuth(provider, providerId);
+            if (user) return { id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role };
+            if (email) {
+                user = memFindByEmail(email);
+                if (user) return { id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role };
+            }
+            const id = ++memIdCounter;
+            const newUser = { id, nom, prenom, email, mot_de_passe: null, provider, provider_id: String(providerId), role: 'client' };
+            memUsers.set(id, newUser);
+            return { id, nom, prenom, email, role: 'client' };
         }
-
-        // Créer un nouveau compte OAuth
-        const sql = 'INSERT INTO users (nom, prenom, email, mot_de_passe, provider, provider_id, role) VALUES (?, ?, ?, NULL, ?, ?, ?)';
-        const result = await execute(sql, [nom, prenom, email, provider, String(providerId), 'client']);
-
-        return {
-            id: result.insertId,
-            nom,
-            prenom,
-            email,
-            role: 'client'
-        };
     }
 
     /**
      * Trouver un utilisateur par email
      */
     static async findByEmail(email) {
-        const sql = 'SELECT * FROM users WHERE email = ?';
-        return await queryOne(sql, [email]);
+        try {
+            const sql = 'SELECT * FROM users WHERE email = ?';
+            return await queryOne(sql, [email]);
+        } catch (error) {
+            return memFindByEmail(email) || null;
+        }
     }
 
     /**
      * Trouver un utilisateur par ID
      */
     static async findById(id) {
-        const sql = 'SELECT id, nom, email, role FROM users WHERE id = ?';
-        return await queryOne(sql, [id]);
+        try {
+            const sql = 'SELECT id, nom, email, role FROM users WHERE id = ?';
+            return await queryOne(sql, [id]);
+        } catch (error) {
+            const u = memUsers.get(id);
+            return u ? { id: u.id, nom: u.nom, email: u.email, role: u.role } : null;
+        }
     }
 
     /**
