@@ -5,6 +5,15 @@
 
 import Hotel from '../models/Hotel.js';
 
+const normalizeCity = (value = '') => value
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 // Données fallback si la base de données est indisponible
 const FALLBACK_HOTELS = [
     { id: 1, nom: "Hôtel Ivoire", ville: "Abidjan", prix: 85000, image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80", note: 4.8, avis: 234, disponibilite: 1, description: "Établissement 5 étoiles prestigieux offrant une vue panoramique sur la lagune Ébrié. Chambres spacieuses avec balcon privé, spa de luxe, piscine à débordement, restaurant gastronomique et service de conciergerie 24h/24." },
@@ -27,11 +36,13 @@ export const getAllHotels = async (req, res) => {
         const offset = (page - 1) * limit;
 
         const hotels = await Hotel.getAll(limit, offset);
+        const resolvedHotels = hotels.length > 0 ? hotels : FALLBACK_HOTELS;
 
         res.json({
             success: true,
-            data: hotels,
-            pagination: { page, limit, count: hotels.length }
+            data: resolvedHotels,
+            fallback: hotels.length === 0,
+            pagination: { page, limit, count: resolvedHotels.length }
         });
 
     } catch (error) {
@@ -85,14 +96,23 @@ export const searchHotels = async (req, res) => {
         if (disponibilite !== undefined) criteres.disponibilite = disponibilite;
 
         const hotels = await Hotel.search(criteres);
+        if (hotels.length > 0) {
+            return res.json({ success: true, data: hotels, count: hotels.length });
+        }
 
-        res.json({ success: true, data: hotels, count: hotels.length });
+        const villeNorm = normalizeCity(ville || '');
+        const fallbackResults = villeNorm
+            ? FALLBACK_HOTELS.filter((h) => normalizeCity(h.ville).includes(villeNorm))
+            : FALLBACK_HOTELS;
+
+        return res.json({ success: true, data: fallbackResults, count: fallbackResults.length, fallback: true });
 
     } catch (error) {
         console.warn('[Fallback] DB indisponible pour recherche hôtels');
         const { ville } = req.query;
-        const results = ville
-            ? FALLBACK_HOTELS.filter(h => h.ville.toLowerCase().includes(ville.toLowerCase()))
+        const villeNorm = normalizeCity(ville || '');
+        const results = villeNorm
+            ? FALLBACK_HOTELS.filter((h) => normalizeCity(h.ville).includes(villeNorm))
             : FALLBACK_HOTELS;
         res.json({ success: true, data: results, count: results.length, fallback: true });
     }

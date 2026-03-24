@@ -5,6 +5,15 @@
 
 import Restaurant from '../models/Restaurant.js';
 
+const normalizeCity = (value = '') => value
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 // Données fallback si la base de données est indisponible
 const FALLBACK_RESTAURANTS = [
     { id: 1, nom: "Le Palais Africain", ville: "Abidjan", prix: 12000, image: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=1200&q=80", note: 4.9, avis: 456, disponibilite: 1, description: "Institution culinaire ivoirienne depuis 1985, spécialisée dans la gastronomie traditionnelle ouest-africaine. Chef exécutif formé à Paris, carte de 50 plats signatures." },
@@ -27,11 +36,13 @@ export const getAllRestaurants = async (req, res) => {
         const offset = (page - 1) * limit;
 
         const restaurants = await Restaurant.getAll(limit, offset);
+        const resolvedRestaurants = restaurants.length > 0 ? restaurants : FALLBACK_RESTAURANTS;
 
         res.json({
             success: true,
-            data: restaurants,
-            pagination: { page, limit, count: restaurants.length }
+            data: resolvedRestaurants,
+            fallback: restaurants.length === 0,
+            pagination: { page, limit, count: resolvedRestaurants.length }
         });
 
     } catch (error) {
@@ -85,14 +96,23 @@ export const searchRestaurants = async (req, res) => {
         if (disponibilite !== undefined) criteres.disponibilite = disponibilite;
 
         const restaurants = await Restaurant.search(criteres);
+        if (restaurants.length > 0) {
+            return res.json({ success: true, data: restaurants, count: restaurants.length });
+        }
 
-        res.json({ success: true, data: restaurants, count: restaurants.length });
+        const villeNorm = normalizeCity(ville || '');
+        const fallbackResults = villeNorm
+            ? FALLBACK_RESTAURANTS.filter((r) => normalizeCity(r.ville).includes(villeNorm))
+            : FALLBACK_RESTAURANTS;
+
+        return res.json({ success: true, data: fallbackResults, count: fallbackResults.length, fallback: true });
 
     } catch (error) {
         console.warn('[Fallback] DB indisponible pour recherche restaurants');
         const { ville } = req.query;
-        const results = ville
-            ? FALLBACK_RESTAURANTS.filter(r => r.ville.toLowerCase().includes(ville.toLowerCase()))
+        const villeNorm = normalizeCity(ville || '');
+        const results = villeNorm
+            ? FALLBACK_RESTAURANTS.filter((r) => normalizeCity(r.ville).includes(villeNorm))
             : FALLBACK_RESTAURANTS;
         res.json({ success: true, data: results, count: results.length, fallback: true });
     }
