@@ -34,8 +34,19 @@ const PORT = process.env.PORT || 5000;
 // MIDDLEWARE
 // ===================================
 
-// Sécurité
-app.use(helmet());
+// Sécurité (helmet avec CSP permissive pour les images externes)
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            imgSrc: ["'self'", "data:", "https:", "http:"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            fontSrc: ["'self'", "data:", "https:"],
+            connectSrc: ["'self'", "https:"]
+        }
+    }
+}));
 
 // CORS
 const envOrigins = (process.env.CORS_ORIGINS || '')
