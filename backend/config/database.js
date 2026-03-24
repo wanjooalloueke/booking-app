@@ -8,11 +8,31 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const dbHost = process.env.DB_HOST || process.env.MYSQLHOST || 'localhost';
-const dbUser = process.env.DB_USER || process.env.MYSQLUSER || 'root';
-const dbPassword = process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || '';
-const dbName = process.env.DB_NAME || process.env.MYSQLDATABASE || 'booking_app';
-const dbPort = Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306);
+const rawDbHost = process.env.DB_HOST || process.env.MYSQLHOST || '';
+const rawDatabaseUrl = process.env.DATABASE_URL || process.env.MYSQL_URL || '';
+
+let dbHost = rawDbHost || 'localhost';
+let dbUser = process.env.DB_USER || process.env.MYSQLUSER || 'root';
+let dbPassword = process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || '';
+let dbName = process.env.DB_NAME || process.env.MYSQLDATABASE || 'booking_app';
+let dbPort = Number(process.env.DB_PORT || process.env.MYSQLPORT || 3306);
+
+const candidateUrl = rawDatabaseUrl || (rawDbHost.startsWith('mysql://') ? rawDbHost : '');
+if (candidateUrl) {
+    try {
+        const parsed = new URL(candidateUrl);
+        dbHost = parsed.hostname || dbHost;
+        dbPort = Number(parsed.port || dbPort);
+        dbUser = decodeURIComponent(parsed.username || dbUser);
+        dbPassword = decodeURIComponent(parsed.password || dbPassword);
+        const dbPath = (parsed.pathname || '').replace(/^\//, '');
+        if (dbPath) {
+            dbName = dbPath;
+        }
+    } catch (error) {
+        console.warn('⚠️ URL MySQL invalide, utilisation des variables DB_* classiques');
+    }
+}
 
 const sslEnabled = ['1', 'true', 'yes'].includes((process.env.DB_SSL || process.env.MYSQL_SSL || '').toLowerCase());
 
