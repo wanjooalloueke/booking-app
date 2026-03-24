@@ -43,7 +43,7 @@ app.use(helmet({
             scriptSrc: ["'self'", "'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             fontSrc: ["'self'", "data:", "https:"],
-            connectSrc: ["'self'", "https:"]
+            connectSrc: ["'self'", "https:", "http:", "http://localhost:*", "https://localhost:*"]
         }
     }
 }));
