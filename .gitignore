@@ -1,0 +1,51 @@
+
+# --- NODE ---
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# --- ENVIRONNEMENT ---
+.env
+.env.local
+.env.*.local
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- BUILD ---
+dist/
+build/
+*.log
+*.tmp
+
+# --- DONNÉES ---
+*.sql
+database/backup/
+data/
+
+# --- MISC ---
+.cache/
+.eslintcache
+coverage/
+*.pid
+*.seed
+*.pid.lock
+
+# --- UPLOADS ---
+uploads/
+tmp/
+temp/
+
+# --- DATABASE ---
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal

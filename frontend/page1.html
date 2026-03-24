@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mes reservations - Booking.CI</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1;
+            text-transform: capitalize;
+        }
+
+        .status-confirmed {
+            background: #e9f8ef;
+            color: #1f7a39;
+            border: 1px solid #bfe7cb;
+        }
+
+        .status-pending {
+            background: #fff7e6;
+            color: #a66600;
+            border: 1px solid #ffe0a3;
+        }
+
+        .status-cancelled {
+            background: #fdeaea;
+            color: #a72828;
+            border: 1px solid #f5b4b4;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="navbar-brand">
+                <h1 class="logo">Booking.CI</h1>
+            </div>
+            <button class="hamburger" id="hamburger" aria-label="Ouvrir le menu" aria-expanded="false">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <ul class="nav-menu" id="navMenu">
+                <li><a href="index.html#hotels" class="nav-link">HOTEL</a></li>
+                <li><a href="index.html#restaurants" class="nav-link">RESTAURANT</a></li>
+                <li><a href="page1.html" class="nav-link">RESERVATION</a></li>
+                <li><a href="index.html#apropos" class="nav-link">A PROPOS</a></li>
+                <li><a href="#" class="nav-link btn-login" id="loginBtn">CONNEXION</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <section class="section" style="padding-top: 32px;">
+        <div class="container">
+            <h2>Mes reservations</h2>
+            <p class="section-subtitle">Reservations associees a votre compte</p>
+
+            <div id="reservationError" style="display:none; margin: 12px 0; padding: 10px 12px; border-radius: 8px; font-size: 14px;"></div>
+            <div id="reservationsContainer" style="margin-top: 16px;"></div>
+        </div>
+    </section>
+
+    <script src="js/app.js"></script>
+    <script>
+        function formatDate(value) {
+            if (!value) return '-';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return value;
+            return date.toLocaleDateString('fr-FR');
+        }
+
+        function normalizeStatus(status) {
+            return (status || '')
+                .toString()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .trim();
+        }
+
+        function getStatusClass(status) {
+            const normalized = normalizeStatus(status);
+            if (normalized === 'annulee' || normalized === 'annule') return 'status-cancelled';
+            if (normalized === 'en attente' || normalized === 'attente') return 'status-pending';
+            return 'status-confirmed';
+        }
+
+        function showReservationMessage(type, message) {
+            const box = document.getElementById('reservationError');
+            box.style.display = 'block';
+            box.textContent = message;
+
+            if (type === 'success') {
+                box.style.backgroundColor = '#e9f8ef';
+                box.style.color = '#1f7a39';
+                box.style.border = '1px solid #bfe7cb';
+            } else {
+                box.style.backgroundColor = '#fdeaea';
+                box.style.color = '#a72828';
+                box.style.border = '1px solid #f5b4b4';
+            }
+        }
+
+        function renderReservations(list) {
+            const container = document.getElementById('reservationsContainer');
+
+            if (!list || list.length === 0) {
+                container.innerHTML = '<p>Aucune reservation pour le moment.</p>';
+                return;
+            }
+
+            const rows = list.map((r) => `
+                <tr>
+                    <td style="padding:10px; border-bottom:1px solid #eee;">${r.type}</td>
+                    <td style="padding:10px; border-bottom:1px solid #eee;">${formatDate(r.date_debut)}</td>
+                    <td style="padding:10px; border-bottom:1px solid #eee;">${formatDate(r.date_fin)}</td>
+                    <td style="padding:10px; border-bottom:1px solid #eee;">${r.nombre_personnes}</td>
+                    <td style="padding:10px; border-bottom:1px solid #eee;">
+                        <span class="status-badge ${getStatusClass(r.statut)}">${r.statut || 'confirmée'}</span>
+                    </td>
+                    <td style="padding:10px; border-bottom:1px solid #eee;">
+                        ${r.statut === 'annulée' ? '-' : `<button data-id="${r.id}" class="cancel-btn" style="background:#dc3545; color:#fff; border:none; border-radius:6px; padding:6px 10px; cursor:pointer;">Annuler</button>`}
+                    </td>
+                </tr>
+            `).join('');
+
+            container.innerHTML = `
+                <div style="overflow-x:auto; background:#fff; border-radius:10px; box-shadow: 0 4px 14px rgba(0,0,0,0.08);">
+                    <table style="width:100%; border-collapse:collapse; min-width:760px;">
+                        <thead>
+                            <tr style="background:#f6f8fb;">
+                                <th style="padding:10px; text-align:left;">Type</th>
+                                <th style="padding:10px; text-align:left;">Debut</th>
+                                <th style="padding:10px; text-align:left;">Fin</th>
+                                <th style="padding:10px; text-align:left;">Personnes</th>
+                                <th style="padding:10px; text-align:left;">Statut</th>
+                                <th style="padding:10px; text-align:left;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+
+            container.querySelectorAll('.cancel-btn').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                    const reservationId = btn.getAttribute('data-id');
+                    await cancelReservationFromPage(reservationId);
+                });
+            });
+        }
+
+        async function loadMyReservations() {
+            const response = await apiRequest('/reservations/me');
+            renderReservations(response.data || []);
+        }
+
+        async function cancelReservationFromPage(reservationId) {
+            const confirmed = window.confirm('Voulez-vous vraiment annuler cette reservation ?');
+            if (!confirmed) return;
+
+            try {
+                await apiRequest(`/reservations/${reservationId}`, {
+                    method: 'DELETE'
+                });
+
+                await loadMyReservations();
+                showReservationMessage('success', 'Votre reservation a ete annulee avec succes.');
+            } catch (error) {
+                showReservationMessage('error', error.message || 'Une erreur est survenue lors de l\'annulation de votre reservation. Veuillez reessayer.');
+            }
+        }
+
+        async function initPageReservations() {
+            try {
+                await verifyToken();
+
+                if (!currentUser) {
+                    window.location.href = '/';
+                    return;
+                }
+
+                await loadMyReservations();
+            } catch (error) {
+                showReservationMessage('error', error.message || 'Impossible de charger vos reservations pour le moment.');
+            }
+        }
+
+        initPageReservations();
+    </script>
+</body>
+</html>
