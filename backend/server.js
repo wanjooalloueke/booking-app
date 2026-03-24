@@ -19,6 +19,7 @@ import restaurantRoutes from './routes/restaurantRoutes.js';
 import reservationRoutes from './routes/reservationRoutes.js';
 import { requirePageAuth, generateToken } from './middleware/auth.js';
 import User from './models/User.js';
+import { testConnection } from './config/database.js';
 
 // Charger les variables d'environnement
 dotenv.config();
@@ -358,7 +359,7 @@ app.use((err, req, res, next) => {
 // DÉMARRAGE DU SERVEUR
 // ===================================
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`
     ╔════════════════════════════════════╗
     ║   Booking.CI API Server             ║
@@ -368,6 +369,14 @@ app.listen(PORT, () => {
     `);
     console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
     console.log(`📚 Documentation API disponible sur http://localhost:${PORT}/api`);
+
+    const dbHostPreview = process.env.DB_HOST || process.env.MYSQLHOST || process.env.DATABASE_URL || 'non défini';
+    const dbPortPreview = process.env.DB_PORT || process.env.MYSQLPORT || '3306';
+    const dbNamePreview = process.env.DB_NAME || process.env.MYSQLDATABASE || 'booking_app';
+    const dbUserPreview = process.env.DB_USER || process.env.MYSQLUSER || 'root';
+    console.log(`🗄️ DB cible -> host: ${dbHostPreview} | port: ${dbPortPreview} | db: ${dbNamePreview} | user: ${dbUserPreview}`);
+
+    await testConnection();
 });
 
 export default app;
