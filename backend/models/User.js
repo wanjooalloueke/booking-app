@@ -10,6 +10,7 @@ import { query, queryOne, execute } from '../config/database.js';
 // Store en mémoire (fallback sans DB)
 const memUsers = new Map(); // id -> userObject
 let memIdCounter = 1000;
+let userColumnsCache = null;
 
 function memFindByEmail(email) {
     for (const u of memUsers.values()) {
@@ -23,6 +24,28 @@ function memFindByOAuth(provider, providerId) {
         if (u.provider === provider && u.provider_id === String(providerId)) return u;
     }
     return null;
+}
+
+async function getUserColumns() {
+    if (userColumnsCache) {
+        return userColumnsCache;
+    }
+
+    try {
+        const rows = await query('SHOW COLUMNS FROM users');
+        userColumnsCache = new Set(rows.map((row) => row.Field));
+        return userColumnsCache;
+    } catch (error) {
+        // Valeurs par défaut du schéma courant si l'introspection échoue.
+        userColumnsCache = new Set(['id', 'nom', 'prenom', 'email', 'telephone', 'mot_de_passe', 'provider', 'provider_id', 'role']);
+        return userColumnsCache;
+    }
+}
+
+function resolvePasswordColumn(columns) {
+    if (columns.has('mot_de_passe')) return 'mot_de_passe';
+    if (columns.has('password')) return 'password';
+    return 'mot_de_passe';
 }
 
 class User {
@@ -39,8 +62,35 @@ class User {
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(password, salt);
 
-            const sql = 'INSERT INTO users (nom, prenom, email, mot_de_passe, telephone, provider, role) VALUES (?, ?, ?, ?, ?, ?, ?)';
-            const result = await execute(sql, [nom, prenom || null, email, hashedPassword, telephone || null, 'local', 'client']);
+            const columns = await getUserColumns();
+            const passwordColumn = resolvePasswordColumn(columns);
+
+            const insertColumns = ['nom', 'email', passwordColumn];
+            const insertValues = [nom, email, hashedPassword];
+
+            if (columns.has('prenom')) {
+                insertColumns.push('prenom');
+                insertValues.push(prenom || null);
+            }
+
+            if (columns.has('telephone')) {
+                insertColumns.push('telephone');
+                insertValues.push(telephone || null);
+            }
+
+            if (columns.has('provider')) {
+                insertColumns.push('provider');
+                insertValues.push('local');
+            }
+
+            if (columns.has('role')) {
+                insertColumns.push('role');
+                insertValues.push('client');
+            }
+
+            const placeholders = insertColumns.map(() => '?').join(', ');
+            const sql = `INSERT INTO users (${insertColumns.join(', ')}) VALUES (${placeholders})`;
+            const result = await execute(sql, insertValues);
 
             return {
                 id: result.insertId,
@@ -112,7 +162,23 @@ class User {
      */
     static async findByEmail(email) {
         try {
-            const sql = 'SELECT * FROM users WHERE email = ?';
+            const columns = await getUserColumns();
+            const passwordColumn = resolvePasswordColumn(columns);
+            const sql = `
+                SELECT
+                    id,
+                    ${columns.has('nom') ? 'nom' : 'NULL AS nom'},
+                    ${columns.has('prenom') ? 'prenom' : 'NULL AS prenom'},
+                    email,
+                    ${columns.has('telephone') ? 'telephone' : 'NULL AS telephone'},
+                    ${columns.has(passwordColumn) ? `${passwordColumn} AS mot_de_passe` : 'NULL AS mot_de_passe'},
+                    ${columns.has('provider') ? 'provider' : "'local' AS provider"},
+                    ${columns.has('provider_id') ? 'provider_id' : 'NULL AS provider_id'},
+                    ${columns.has('role') ? 'role' : "'client' AS role"}
+                FROM users
+                WHERE email = ?
+                LIMIT 1
+            `;
             const dbUser = await queryOne(sql, [email]);
             if (dbUser) {
                 return dbUser;
@@ -128,7 +194,17 @@ class User {
      */
     static async findById(id) {
         try {
-            const sql = 'SELECT id, nom, email, role FROM users WHERE id = ?';
+            const columns = await getUserColumns();
+            const sql = `
+                SELECT
+                    id,
+                    ${columns.has('nom') ? 'nom' : 'NULL AS nom'},
+                    email,
+                    ${columns.has('role') ? 'role' : "'client' AS role"}
+                FROM users
+                WHERE id = ?
+                LIMIT 1
+            `;
             const dbUser = await queryOne(sql, [id]);
             if (dbUser) {
                 return dbUser;
